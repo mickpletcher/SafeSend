@@ -2,6 +2,10 @@
 
 A Python FastAPI application that receives and processes webhook events from SafeSend. Automatically downloads documents from time-limited SAS URLs and routes events to appropriate handlers based on event type.
 
+## Status
+
+**⚠️ UNTESTED:** This webhook implementation has not been tested against live SafeSend webhooks. Use with caution and validate thoroughly in a development environment before production deployment.
+
 ## Repository Contents
 
 ### Documentation
