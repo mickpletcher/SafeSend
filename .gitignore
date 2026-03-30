@@ -18,3 +18,5 @@ Webhook/.env
 logs/
 Webhook/logs/
 Webhook/downloads/
+Webhook/dedupe_store.db
+Webhook/dedupe_store.db-*

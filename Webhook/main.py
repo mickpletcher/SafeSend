@@ -7,13 +7,16 @@ to the appropriate handler based on eventType.
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException, Header
+import hashlib
+import json
+from fastapi import FastAPI, Request, Header
 from fastapi.responses import JSONResponse
 
 from .config import settings
 from .event_queue import event_queue
 from .processor import process_event
 from .models import WebhookEvent
+from .dedupe_store import SQLiteDedupeStore
 import asyncio
 
 # ---------------------------------------------------------------------------
@@ -30,6 +33,16 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("safesend.receiver")
+dedupe_store = SQLiteDedupeStore(
+    db_path=settings.DEDUPE_DB_PATH,
+    ttl_seconds=settings.DEDUPE_TTL_SECONDS,
+)
+webhook_metrics = {
+    "received_total": 0,
+    "enqueued_total": 0,
+    "invalid_api_key_total": 0,
+    "duplicate_total": 0,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -38,9 +51,13 @@ logger = logging.getLogger("safesend.receiver")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("SafeSend Webhook Receiver starting up")
+    await dedupe_store.start()
+    await event_queue.start()
     task = asyncio.create_task(background_processor())
     yield
     task.cancel()
+    await event_queue.close()
+    await dedupe_store.close()
     logger.info("SafeSend Webhook Receiver shutting down")
 
 
@@ -80,7 +97,11 @@ async def background_processor():
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health():
-    return {"status": "ok", "queue_depth": event_queue.qsize()}
+    return {
+        "status": "ok",
+        "queue_depth": event_queue.qsize(),
+        "metrics": webhook_metrics,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +124,13 @@ async def receive_webhook(
     CRITICAL: Always return 200. If SafeSend does not receive a 2xx response
     it will disable the webhook subscription and queue all future events.
     """
+    webhook_metrics["received_total"] += 1
 
     # Optional API key validation (configure in .env)
     if settings.WEBHOOK_SECRET and x_api_key != settings.WEBHOOK_SECRET:
         logger.warning("Rejected webhook - invalid API key")
-        raise HTTPException(status_code=401, detail="Invalid API key")
+        webhook_metrics["invalid_api_key_total"] += 1
+        return JSONResponse(status_code=200, content={"received": False, "reason": "invalid api key"})
 
     try:
         payload = await request.json()
@@ -134,8 +157,24 @@ async def receive_webhook(
         f"Received event | type={event.event_type} | id={event.event_id}"
     )
 
+    payload_key = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+    try:
+        duplicate = await dedupe_store.was_seen(payload_key)
+    except Exception as exc:
+        logger.exception(f"Failed dedupe check, continuing without dedupe: {exc}")
+        duplicate = False
+
+    if duplicate:
+        logger.info("Duplicate webhook payload detected, skipping enqueue")
+        webhook_metrics["duplicate_total"] += 1
+        return JSONResponse(status_code=200, content={"received": True, "duplicate": True})
+
     # Push onto the async queue - do NOT process inline
     await event_queue.put(event)
+    webhook_metrics["enqueued_total"] += 1
 
     # Always return 200 to SafeSend
     return JSONResponse(status_code=200, content={"received": True, "event_id": event.event_id})

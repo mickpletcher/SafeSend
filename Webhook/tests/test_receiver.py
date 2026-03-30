@@ -54,7 +54,7 @@ def make_returns_status_payload():
     }
 
 
-def make_typed_payload(event_type: int, extra: dict = None):
+def make_typed_payload(event_type: int, extra: dict | None = None):
     data = {
         "eventType": event_type,
         "eventData": {
@@ -209,10 +209,19 @@ class TestWebhookEndpoint:
         return TestClient(app)
 
     def test_health_endpoint(self, client):
+        from Webhook import main as receiver_main
+
         response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
+        assert "metrics" in data
+        for key in ["received_total", "enqueued_total", "invalid_api_key_total", "duplicate_total"]:
+            assert key in data["metrics"]
+            assert isinstance(data["metrics"][key], int)
+
+        # Keep linter happy for imported module and ensure shared object exposure
+        assert isinstance(receiver_main.webhook_metrics, dict)
 
     def test_webhook_accepts_valid_payload(self, client):
         payload = make_returns_status_payload()
@@ -240,6 +249,9 @@ class TestWebhookEndpoint:
 
     def test_webhook_rejects_wrong_api_key(self, client, monkeypatch):
         from Webhook import config
+        from Webhook import main as receiver_main
+
+        before = receiver_main.webhook_metrics["invalid_api_key_total"]
 
         monkeypatch.setattr(config.settings, "WEBHOOK_SECRET", "correct_secret")
         response = client.post(
@@ -247,7 +259,11 @@ class TestWebhookEndpoint:
             json=make_returns_status_payload(),
             headers={"x-api-key": "wrong_secret"},
         )
-        assert response.status_code == 401
+        assert response.status_code == 200
+        data = response.json()
+        assert data["received"] is False
+        assert data["reason"] == "invalid api key"
+        assert receiver_main.webhook_metrics["invalid_api_key_total"] == before + 1
 
     def test_webhook_accepts_correct_api_key(self, client, monkeypatch):
         from Webhook import config
@@ -259,6 +275,22 @@ class TestWebhookEndpoint:
             headers={"x-api-key": "correct_secret"},
         )
         assert response.status_code == 200
+
+    def test_webhook_duplicate_payload_is_acknowledged(self, client, monkeypatch):
+        from Webhook import main as receiver_main
+
+        before = receiver_main.webhook_metrics["duplicate_total"]
+
+        async def seen_once(_: str) -> bool:
+            return True
+
+        monkeypatch.setattr(receiver_main.dedupe_store, "was_seen", seen_once)
+        response = client.post("/webhook/safesend", json=make_returns_status_payload())
+        assert response.status_code == 200
+        data = response.json()
+        assert data["received"] is True
+        assert data["duplicate"] is True
+        assert receiver_main.webhook_metrics["duplicate_total"] == before + 1
 
 
 class TestPathSanitization:

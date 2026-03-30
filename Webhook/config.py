@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     AZURE_SERVICE_BUS_CONNECTION_STRING: str = ""
     AZURE_SERVICE_BUS_QUEUE_NAME: str = "safesend-events"
 
+    # In-memory queue max size. 0 means unbounded.
+    EVENT_QUEUE_MAX_SIZE: int = 0
+
+    # Persistent dedupe store settings
+    DEDUPE_DB_PATH: str = "Webhook/dedupe_store.db"
+    DEDUPE_TTL_SECONDS: int = 604800
+
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()

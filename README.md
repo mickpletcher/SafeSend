@@ -12,6 +12,7 @@ A Python FastAPI application that receives and processes webhook events from Saf
 - [API_Portal_Integration_Guide.pdf](API_Portal_Integration_Guide.pdf) - SafeSend API Portal integration reference
 - [Webhook_Integration_Guide.pdf](Webhook_Integration_Guide.pdf) - SafeSend webhook implementation guide
 - [SafeSend_Developer_Handbook.docx](SafeSend_Developer_Handbook.docx) - Complete developer reference
+- [documentation/README.md](documentation/README.md) - Full implementation documentation for non coders
 - **Raw Data Handbooks/** - Source documentation files
   - API_Portal_Integration_Guide_Rawdata.pdf
   - Webhook_Integration_Guide_Rawdata.pdf
@@ -25,7 +26,8 @@ The **Webhook/** directory contains the complete webhook receiver application.
 - `models.py` - Pydantic models for webhook events and data structures
 - `config.py` - Configuration management via environment variables
 - `downloader.py` - Document downloader for time-limited SAS URLs
-- `queue.py` - In-memory event queue (with optional Azure Service Bus support)
+- `event_queue.py` - Queue adapter with in-memory and optional Azure Service Bus support
+- `dedupe_store.py` - Persistent dedupe store for webhook replay protection
 
 **Entry Points:**
 - `run.py` - Python entry point for starting the application
