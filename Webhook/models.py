@@ -136,7 +136,10 @@ class WebhookEvent(BaseModel):
 
         # Determine event type
         if raw_event_type is not None:
-            event_type = int(raw_event_type)
+            try:
+                event_type = int(raw_event_type)
+            except (TypeError, ValueError):
+                event_type = None
         elif "documentStatus" in payload:
             event_type = EventType.RETURNS_ESIGN
         elif "status" in payload and "taxReturnId" in payload:

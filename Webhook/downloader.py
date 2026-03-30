@@ -8,12 +8,11 @@ the webhook. Never store a SAS URL for later use.
 """
 
 import logging
-import os
 import asyncio
 import httpx
 from pathlib import Path
 
-from .config import settings
+from config import settings
 
 logger = logging.getLogger("safesend.downloader")
 
@@ -44,10 +43,7 @@ async def download_document(
 
     # Build the output path
     base_path = Path(settings.DOWNLOAD_BASE_PATH)
-    if sub_dir:
-        output_dir = base_path / sub_dir
-    else:
-        output_dir = base_path
+    output_dir = _safe_output_dir(base_path, sub_dir)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,3 +115,22 @@ def _sanitize_filename(name: str) -> str:
         name = name.replace("__", "_")
 
     return name.strip("_") or "document.bin"
+
+
+def _sanitize_path_segment(segment: str) -> str:
+    cleaned = _sanitize_filename(segment).replace("..", "")
+    return cleaned.strip(".") or "unknown"
+
+
+def _safe_output_dir(base_path: Path, sub_dir: str) -> Path:
+    base_resolved = base_path.resolve()
+    if not sub_dir:
+        return base_resolved
+
+    safe_parts = [_sanitize_path_segment(part) for part in Path(sub_dir).parts if part not in ("", ".", "..")]
+    output_dir = base_resolved.joinpath(*safe_parts).resolve()
+
+    if base_resolved not in output_dir.parents and output_dir != base_resolved:
+        raise ValueError("Resolved output directory is outside DOWNLOAD_BASE_PATH")
+
+    return output_dir

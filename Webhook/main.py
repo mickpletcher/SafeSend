@@ -6,18 +6,21 @@ to the appropriate handler based on eventType.
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
 
-from .config import settings
-from .queue import event_queue
-from .processor import process_event
-from .models import WebhookEvent
+from config import settings
+from event_queue import event_queue
+from processor import process_event
+from models import WebhookEvent
 import asyncio
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+Path("logs").mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -56,17 +59,20 @@ async def background_processor():
     """Continuously drain the in-memory queue and process events."""
     logger.info("Background processor started")
     while True:
+        event = None
         try:
             event = await event_queue.get()
             logger.info(
                 f"Processing event | type={event.event_type} | id={event.event_id}"
             )
             await process_event(event)
-            event_queue.task_done()
         except asyncio.CancelledError:
             break
         except Exception as exc:
             logger.exception(f"Unhandled error in background processor: {exc}")
+        finally:
+            if event is not None:
+                event_queue.task_done()
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +120,16 @@ async def receive_webhook(
         return JSONResponse(status_code=200, content={"received": False, "reason": "invalid json"})
 
     # Build a normalized event object
-    event = WebhookEvent.from_payload(payload)
+    try:
+        event = WebhookEvent.from_payload(payload)
+    except Exception as exc:
+        logger.error(f"Failed to normalize webhook payload: {exc}")
+        return JSONResponse(status_code=200, content={"received": False, "reason": "invalid payload"})
+
+    if event.event_type is None:
+        logger.warning("Unable to determine event type from payload")
+        return JSONResponse(status_code=200, content={"received": False, "reason": "unknown event type"})
+
     logger.info(
         f"Received event | type={event.event_type} | id={event.event_id}"
     )

@@ -1,12 +1,14 @@
 """
 Tests for the SafeSend webhook receiver.
 
-Run with:  pytest tests/ -v
+Run with:  pytest -v
 """
 
 import pytest
 import asyncio
-from app.models import WebhookEvent, EventType
+from pathlib import Path
+from models import WebhookEvent, EventType
+from downloader import _safe_output_dir
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +117,11 @@ class TestWebhookEventParsing:
         event = WebhookEvent.from_payload({"someUnknownField": "value"})
         assert event.event_type is None
 
+    def test_malformed_event_type_does_not_crash(self):
+        payload = {"eventType": "not-a-number", "eventData": {}}
+        event = WebhookEvent.from_payload(payload)
+        assert event.event_type is None
+
 
 # ---------------------------------------------------------------------------
 # Router tests
@@ -124,7 +131,7 @@ class TestEventRouter:
     @pytest.mark.asyncio
     async def test_all_typed_events_route_without_error(self):
         """Ensure all known event types route to a handler without raising."""
-        from app.processor import process_event
+        from processor import process_event
 
         event_types = [3000, 3001, 2000, 2001, 2002, 2003, 2004,
                        4000, 4001, 5001, 6000, 6001, 6002, 6003]
@@ -147,7 +154,7 @@ class TestEventRouter:
 
     @pytest.mark.asyncio
     async def test_returns_events_route_without_error(self):
-        from app.processor import process_event
+        from processor import process_event
 
         for payload in [make_returns_esign_payload(), make_returns_status_payload()]:
             event = WebhookEvent.from_payload(payload)
@@ -161,7 +168,7 @@ class TestEventRouter:
 
     @pytest.mark.asyncio
     async def test_unknown_event_type_does_not_raise(self):
-        from app.processor import process_event
+        from processor import process_event
         event = WebhookEvent.from_payload({"eventType": 9999, "eventData": {}})
         # Should log a warning but not raise
         await process_event(event)
@@ -175,7 +182,7 @@ class TestWebhookEndpoint:
     @pytest.fixture
     def client(self):
         from fastapi.testclient import TestClient
-        from app.main import app
+        from main import app
         return TestClient(app)
 
     def test_health_endpoint(self, client):
@@ -199,8 +206,18 @@ class TestWebhookEndpoint:
         )
         assert response.status_code == 200
 
+    def test_webhook_returns_200_for_malformed_event_type(self, client):
+        response = client.post(
+            "/webhook/safesend",
+            json={"eventType": "not-a-number", "eventData": {}}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["received"] is False
+        assert data["reason"] == "unknown event type"
+
     def test_webhook_rejects_wrong_api_key(self, client, monkeypatch):
-        from app import config
+        import config
         monkeypatch.setattr(config.settings, "WEBHOOK_SECRET", "correct_secret")
         response = client.post(
             "/webhook/safesend",
@@ -210,7 +227,7 @@ class TestWebhookEndpoint:
         assert response.status_code == 401
 
     def test_webhook_accepts_correct_api_key(self, client, monkeypatch):
-        from app import config
+        import config
         monkeypatch.setattr(config.settings, "WEBHOOK_SECRET", "correct_secret")
         response = client.post(
             "/webhook/safesend",
@@ -218,3 +235,14 @@ class TestWebhookEndpoint:
             headers={"x-api-key": "correct_secret"}
         )
         assert response.status_code == 200
+
+
+class TestPathSanitization:
+
+    def test_safe_output_dir_keeps_paths_under_base(self):
+        base_path = Path("downloads")
+        resolved_base = base_path.resolve()
+
+        output_dir = _safe_output_dir(base_path, "../../outside/../safe:folder")
+
+        assert output_dir == resolved_base or resolved_base in output_dir.parents
