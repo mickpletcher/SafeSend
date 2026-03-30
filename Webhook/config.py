@@ -5,11 +5,16 @@ All settings are loaded from environment variables.
 Copy .env.example to .env and fill in your values before running.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
     # -----------------------------------------------------------------------
     # Webhook Security
     # -----------------------------------------------------------------------
@@ -41,11 +46,6 @@ class Settings(BaseSettings):
     # Azure Service Bus connection string (leave blank to use in-memory queue)
     AZURE_SERVICE_BUS_CONNECTION_STRING: str = ""
     AZURE_SERVICE_BUS_QUEUE_NAME: str = "safesend-events"
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
 
 @lru_cache()
 def get_settings() -> Settings:

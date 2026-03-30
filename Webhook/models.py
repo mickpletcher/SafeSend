@@ -38,7 +38,7 @@ Event Type Reference:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
@@ -108,7 +108,7 @@ class WebhookEvent(BaseModel):
     """
 
     event_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    received_at: datetime = Field(default_factory=datetime.utcnow)
+    received_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     # Normalized event type (int for typed events, str for Returns events)
     event_type: Any = None
