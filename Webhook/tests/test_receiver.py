@@ -1,14 +1,15 @@
 """
 Tests for the SafeSend webhook receiver.
 
-Run with:  pytest -v
+Run with:  pytest Webhook/tests -v
 """
 
-import pytest
-import asyncio
 from pathlib import Path
-from models import WebhookEvent, EventType
-from downloader import _safe_output_dir
+
+import pytest
+
+from Webhook.downloader import _safe_output_dir
+from Webhook.models import EventType, WebhookEvent
 
 
 # ---------------------------------------------------------------------------
@@ -30,9 +31,9 @@ def make_returns_esign_payload():
                 "email": "john@example.com",
                 "signerDocuments": [
                     {"fileName": "1040_2023.pdf", "sasUrl": "https://example.com/doc1"}
-                ]
+                ],
             }
-        ]
+        ],
     }
 
 
@@ -49,7 +50,7 @@ def make_returns_status_payload():
         "clientId": "CLIENT_001",
         "httpStatus": 0,
         "uniqueArgs": "",
-        "taxReturnId": "LCRKJF8TVXG47AT5E0YU6RYKYW"
+        "taxReturnId": "LCRKJF8TVXG47AT5E0YU6RYKYW",
     }
 
 
@@ -62,10 +63,10 @@ def make_typed_payload(event_type: int, extra: dict = None):
             "taxYear": 2023,
             "documentFile": {
                 "fileName": "test.pdf",
-                "sasUrl": "https://example.com/test.pdf"
+                "sasUrl": "https://example.com/test.pdf",
             },
-            **(extra or {})
-        }
+            **(extra or {}),
+        },
     }
     return data
 
@@ -74,7 +75,6 @@ def make_typed_payload(event_type: int, extra: dict = None):
 # Model parsing tests
 # ---------------------------------------------------------------------------
 class TestWebhookEventParsing:
-
     def test_returns_esign_detection(self):
         payload = make_returns_esign_payload()
         event = WebhookEvent.from_payload(payload)
@@ -88,15 +88,28 @@ class TestWebhookEventParsing:
         assert event.client_id == "CLIENT_001"
 
     def test_typed_event_parsing(self):
-        for etype in [3000, 3001, 2000, 2001, 2002, 2003, 2004,
-                      4000, 4001, 5001, 6000, 6001, 6002, 6003]:
+        for etype in [
+            3000,
+            3001,
+            2000,
+            2001,
+            2002,
+            2003,
+            2004,
+            4000,
+            4001,
+            5001,
+            6000,
+            6001,
+            6002,
+            6003,
+        ]:
             payload = make_typed_payload(etype)
             event = WebhookEvent.from_payload(payload)
             assert event.event_type == etype, f"Failed for eventType {etype}"
 
     def test_document_extraction(self):
         payload = make_typed_payload(4000, {"document": {"name": "w2.pdf", "sasUrl": "https://x.com/w2.pdf"}})
-        # Exchange DRL uses 'document' not 'documentFile'
         payload["eventData"]["document"] = {"name": "w2.pdf", "sasUrl": "https://x.com/w2.pdf"}
         event = WebhookEvent.from_payload(payload)
         assert event.has_document
@@ -127,24 +140,34 @@ class TestWebhookEventParsing:
 # Router tests
 # ---------------------------------------------------------------------------
 class TestEventRouter:
-
     @pytest.mark.asyncio
     async def test_all_typed_events_route_without_error(self):
         """Ensure all known event types route to a handler without raising."""
-        from processor import process_event
+        from Webhook.processor import process_event
 
-        event_types = [3000, 3001, 2000, 2001, 2002, 2003, 2004,
-                       4000, 4001, 5001, 6000, 6001, 6002, 6003]
+        event_types = [
+            3000,
+            3001,
+            2000,
+            2001,
+            2002,
+            2003,
+            2004,
+            4000,
+            4001,
+            5001,
+            6000,
+            6001,
+            6002,
+            6003,
+        ]
 
         for etype in event_types:
             payload = make_typed_payload(etype)
             event = WebhookEvent.from_payload(payload)
-            # Handlers will try to download but sas_url is fake - that's fine
-            # We just verify routing doesn't raise unhandled exceptions
             try:
                 await process_event(event)
             except Exception as exc:
-                # Download failures are expected with fake URLs - not a routing error
                 if "download" in str(exc).lower() or "sas" in str(exc).lower():
                     pass
                 elif "connect" in str(exc).lower() or "url" in str(exc).lower():
@@ -154,7 +177,7 @@ class TestEventRouter:
 
     @pytest.mark.asyncio
     async def test_returns_events_route_without_error(self):
-        from processor import process_event
+        from Webhook.processor import process_event
 
         for payload in [make_returns_esign_payload(), make_returns_status_payload()]:
             event = WebhookEvent.from_payload(payload)
@@ -168,9 +191,9 @@ class TestEventRouter:
 
     @pytest.mark.asyncio
     async def test_unknown_event_type_does_not_raise(self):
-        from processor import process_event
+        from Webhook.processor import process_event
+
         event = WebhookEvent.from_payload({"eventType": 9999, "eventData": {}})
-        # Should log a warning but not raise
         await process_event(event)
 
 
@@ -178,11 +201,11 @@ class TestEventRouter:
 # HTTP endpoint tests
 # ---------------------------------------------------------------------------
 class TestWebhookEndpoint:
-
     @pytest.fixture
     def client(self):
         from fastapi.testclient import TestClient
-        from main import app
+        from Webhook.main import app
+
         return TestClient(app)
 
     def test_health_endpoint(self, client):
@@ -198,18 +221,17 @@ class TestWebhookEndpoint:
         assert response.json()["received"] is True
 
     def test_webhook_returns_200_for_invalid_json_structure(self, client):
-        # Even garbage payloads should return 200 to prevent SafeSend disabling the subscription
         response = client.post(
             "/webhook/safesend",
             content=b"not json at all",
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 200
 
     def test_webhook_returns_200_for_malformed_event_type(self, client):
         response = client.post(
             "/webhook/safesend",
-            json={"eventType": "not-a-number", "eventData": {}}
+            json={"eventType": "not-a-number", "eventData": {}},
         )
         assert response.status_code == 200
         data = response.json()
@@ -217,28 +239,29 @@ class TestWebhookEndpoint:
         assert data["reason"] == "unknown event type"
 
     def test_webhook_rejects_wrong_api_key(self, client, monkeypatch):
-        import config
+        from Webhook import config
+
         monkeypatch.setattr(config.settings, "WEBHOOK_SECRET", "correct_secret")
         response = client.post(
             "/webhook/safesend",
             json=make_returns_status_payload(),
-            headers={"x-api-key": "wrong_secret"}
+            headers={"x-api-key": "wrong_secret"},
         )
         assert response.status_code == 401
 
     def test_webhook_accepts_correct_api_key(self, client, monkeypatch):
-        import config
+        from Webhook import config
+
         monkeypatch.setattr(config.settings, "WEBHOOK_SECRET", "correct_secret")
         response = client.post(
             "/webhook/safesend",
             json=make_returns_status_payload(),
-            headers={"x-api-key": "correct_secret"}
+            headers={"x-api-key": "correct_secret"},
         )
         assert response.status_code == 200
 
 
 class TestPathSanitization:
-
     def test_safe_output_dir_keeps_paths_under_base(self):
         base_path = Path("downloads")
         resolved_base = base_path.resolve()

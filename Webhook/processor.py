@@ -12,9 +12,9 @@ the handler - do not store the URL for later retrieval.
 """
 
 import logging
-from models import WebhookEvent, EventType, DocumentFile
-from downloader import download_document
-from config import settings
+from .models import WebhookEvent, EventType, DocumentFile
+from .downloader import download_document
+from .config import settings
 
 logger = logging.getLogger("safesend.processor")
 

@@ -32,7 +32,7 @@ The **Webhook/** directory contains the complete webhook receiver application.
 - `Start-Webhook.ps1` - PowerShell launcher script
 
 **Testing:**
-- `test_receiver.py` - Test utilities for webhook endpoint
+- `tests/test_receiver.py` - Test utilities for webhook endpoint
 
 **Configuration:**
 - `.env.example` - Environment variable template
@@ -128,20 +128,20 @@ AZURE_SERVICE_BUS_QUEUE_NAME=safesend-events
 
 **Windows (PowerShell):**
 ```powershell
-cd Webhook
-.\Start-Webhook.ps1
+cd SafeSend
+.\Webhook\Start-Webhook.ps1
 ```
 
 **Python:**
 ```bash
-cd Webhook
-python run.py
+cd SafeSend
+python -m Webhook.run
 ```
 
 **Direct with uvicorn:**
 ```bash
-cd Webhook
-uvicorn main:app --host 0.0.0.0 --port 8000
+cd SafeSend
+uvicorn Webhook.main:app --host 0.0.0.0 --port 8000
 ```
 
 The application starts on `http://0.0.0.0:8000` by default.

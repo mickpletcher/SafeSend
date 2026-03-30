@@ -10,10 +10,10 @@ from pathlib import Path
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
 
-from config import settings
-from event_queue import event_queue
-from processor import process_event
-from models import WebhookEvent
+from .config import settings
+from .event_queue import event_queue
+from .processor import process_event
+from .models import WebhookEvent
 import asyncio
 
 # ---------------------------------------------------------------------------

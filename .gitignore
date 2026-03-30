@@ -1,0 +1,20 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and tooling cache
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local environment files
+.env
+Webhook/.env
+
+# Runtime output
+logs/
+Webhook/logs/
+Webhook/downloads/

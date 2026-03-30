@@ -1,0 +1,1 @@
+"""SafeSend webhook package."""
